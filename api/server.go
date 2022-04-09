@@ -16,6 +16,7 @@ func NewServer(store *db.Store) *Server {
 	api := router.Group("/api")
 
 	api.POST("/account", server.createAccount)
+	api.GET("/account/:id", server.getAccount)
 
 	server.router = router
 	return server
