@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"fmt"
 	"net/http"
 
 	db "github.com/ariefro/simple-bank/db/sqlc"
@@ -11,13 +13,21 @@ type transferRequest struct {
 	FromAccountId int64 `json:"from_account_id" binding:"required"`
 	ToAccountId int64 `json:"to_account_id" binding:"required"`
 	Amount int64 `json:"amount" binding:"required,gt=0"`
-	Currency string `json:"currency" binding:"required,oneof=USD EUR SGD"`
+	Currency string `json:"currency" binding:"required,currency"`
 }
 
 func (server *Server) createTransfer(ctx *gin.Context) {
 	var req transferRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+	}
+
+	if !server.validAccount(ctx, req.FromAccountId, req.Currency) {
+		return
+	}
+
+	if !server.validAccount(ctx, req.ToAccountId, req.Currency) {
+		return
 	}
 
 	arg := db.TransferTxParams{
@@ -32,4 +42,25 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, result)
+}
+
+func (server *Server) validAccount(ctx *gin.Context, accountID int64, currency string) bool {
+	account, err := server.store.GetAccount(ctx, accountID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			ctx.JSON(http.StatusNotFound, errorResponse(err))
+			return false
+		}
+
+		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		return false
+	}
+
+	if account.Currency != currency {
+		err := fmt.Errorf("account [%d] currency mismatch: %s vs %s", accountID, account.Currency, currency)
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return false
+	}
+
+	return true
 }
